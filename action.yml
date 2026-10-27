@@ -1,0 +1,87 @@
+name: Empath Team Builds Publish
+description: Share every new build with your team in Empath. Adds the build to your build list; your own storage does the rest.
+inputs:
+  command:
+    description: publish or promote
+    default: publish
+  out:
+    description: Folder to write the build list and build file to
+    default: empath-builds
+  from:
+    description: Address (or path) of the published build list, so new builds are added to it
+    default: ''
+  token:
+    description: Read-only token for the published build list, if it needs one
+    default: ''
+  file:
+    description: (publish) The .apk, the .app folder, or a zip of the .app
+    default: ''
+  platform:
+    description: (publish) ios or android
+    default: ''
+  version:
+    description: Version, like 4.3.0 (publish; optional for promote)
+    default: ''
+  build:
+    description: Build number, like 912 (required for promote)
+    default: ''
+  channel:
+    description: (publish) Channel, like beta
+    default: beta
+  app-name:
+    description: (publish) App name, required for the first build in a list
+    default: ''
+  app-id:
+    description: (publish) Bundle ID or package name
+    default: ''
+  notes:
+    description: (publish) What changed
+    default: ''
+  commit:
+    description: (publish) Commit the build came from
+    default: ${{ github.sha }}
+  from-channel:
+    description: (promote) Channel to copy the build from
+    default: beta
+  to-channel:
+    description: (promote) Channel to copy the build to
+    default: production
+  keep:
+    description: Builds to keep per channel
+    default: '20'
+outputs:
+  out:
+    description: The folder to upload
+    value: ${{ inputs.out }}
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      # Inputs go through the environment, never into the script text
+      env:
+        EMPATH_BUILDS_TOKEN: ${{ inputs.token }}
+        I_COMMAND: ${{ inputs.command }}
+        I_OUT: ${{ inputs.out }}
+        I_FROM: ${{ inputs.from }}
+        I_FILE: ${{ inputs.file }}
+        I_PLATFORM: ${{ inputs.platform }}
+        I_VERSION: ${{ inputs.version }}
+        I_BUILD: ${{ inputs.build }}
+        I_CHANNEL: ${{ inputs.channel }}
+        I_APP_NAME: ${{ inputs.app-name }}
+        I_APP_ID: ${{ inputs.app-id }}
+        I_NOTES: ${{ inputs.notes }}
+        I_COMMIT: ${{ inputs.commit }}
+        I_FROM_CHANNEL: ${{ inputs.from-channel }}
+        I_TO_CHANNEL: ${{ inputs.to-channel }}
+        I_KEEP: ${{ inputs.keep }}
+      run: |
+        set -euo pipefail
+        args=(--out "$I_OUT" --from "$I_FROM" --version "$I_VERSION" --build "$I_BUILD" --keep "$I_KEEP")
+        if [ "$I_COMMAND" = promote ]; then
+          args+=(--from-channel "$I_FROM_CHANNEL" --to-channel "$I_TO_CHANNEL")
+        else
+          args+=(--file "$I_FILE" --platform "$I_PLATFORM" --channel "$I_CHANNEL" \
+            --app-name "$I_APP_NAME" --app-id "$I_APP_ID" --notes "$I_NOTES" --commit "$I_COMMIT")
+        fi
+        node "$GITHUB_ACTION_PATH/empath-publish.js" "$I_COMMAND" "${args[@]}"
