@@ -127,6 +127,9 @@ function packageFile(file, platform, workDir) {
     return { source: file, ext: '.app.zip' };
   }
   if (!file.replace(/\/+$/, '').endsWith('.app')) throw new Error('iOS builds must be an .app folder or a zip of one.');
+  if (builtForPhones(file)) {
+    throw new Error('This .app was built for real iPhones, and Empath runs iOS apps on the Mac. Build it with -sdk iphonesimulator instead.');
+  }
   const zip = path.join(workDir, 'build.app.zip');
   if (process.platform === 'darwin') {
     // ditto keeps the bundle's symlinks and permissions intact
@@ -135,6 +138,19 @@ function packageFile(file, platform, workDir) {
     execFileSync('zip', ['-qry', zip, path.basename(file)], { cwd: path.dirname(path.resolve(file)) });
   }
   return { source: zip, ext: '.app.zip' };
+}
+
+// From the app's Info.plist; only plutil (macOS) can read every plist, so
+// elsewhere this says no and Empath catches it at install time instead
+function builtForPhones(appDir) {
+  if (process.platform !== 'darwin') return false;
+  try {
+    const info = JSON.parse(execFileSync('plutil', ['-convert', 'json', '-o', '-', path.join(appDir, 'Info.plist')], { encoding: 'utf8' }));
+    const platforms = [].concat(info.CFBundleSupportedPlatforms || [], info.DTPlatformName || []).map((value) => String(value).toLowerCase());
+    return platforms.includes('iphoneos') && !platforms.some((value) => value.includes('simulator'));
+  } catch {
+    return false;
+  }
 }
 
 function sha256(file) {
