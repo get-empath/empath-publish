@@ -9,6 +9,7 @@ Each time your team builds the app, this step adds the new build to your team's 
 - **Your builds stay with you.** Builds go from your build system to your own storage, and from there to your team's Macs. They never pass through Empath, and Empath never sees them.
 - **It's small and easy to check.** It's a single file with no add-ons and no tracking, and it needs no Empath account. Anyone on your team can read it in a few minutes.
 - **Nothing gets lost.** If the step can't read your current build list, it stops instead of starting a new one, so your build history is always safe.
+- **It's optional.** Empath only reads your build list. If you'd rather write it with your own scripts, that works too. The format is in Empath's setup guide.
 - **It's free and open source** under the [MIT license](LICENSE).
 
 ## Setting it up
