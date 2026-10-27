@@ -1,0 +1,115 @@
+# Runs the action the way a customer would, on every change, so a broken
+# release never reaches anyone. Also a working example to copy from.
+name: Test
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make a stand-in build
+        run: printf 'pretend apk' > app.apk
+
+      - name: First build starts a new list
+        uses: ./
+        with:
+          file: app.apk
+          platform: android
+          version: 1.0.0
+          build: '1'
+          app-name: Test Shop
+          app-id: com.example.shop
+          notes: 'Notes with "quotes"; $(and a command) stay plain text'
+
+      - name: Serve the list like a company server would, with a token
+        run: |
+          cat > server.js <<'JS'
+          const http = require('http'), fs = require('fs'), path = require('path');
+          http.createServer((req, res) => {
+            if (req.headers.authorization !== 'Bearer read-only') return res.writeHead(401).end();
+            const file = path.join('empath-builds', req.url);
+            fs.existsSync(file) ? res.end(fs.readFileSync(file)) : res.writeHead(404).end();
+          }).listen(8765);
+          JS
+          node server.js &
+          sleep 1
+
+      - name: Second build is added to the published list
+        uses: ./
+        with:
+          from: http://localhost:8765/empath-builds.json
+          token: read-only
+          out: next
+          file: app.apk
+          platform: android
+          version: 1.1.0
+          build: '2'
+
+      - name: Promote build 2 to production
+        uses: ./
+        with:
+          command: promote
+          from: next/empath-builds.json
+          out: next
+          build: '2'
+
+      - name: Check the result
+        run: |
+          node -e '
+            const crypto = require("crypto"), fs = require("fs"), assert = require("assert");
+            const list = JSON.parse(fs.readFileSync("next/empath-builds.json", "utf8"));
+            assert.strictEqual(list.schema, 1);
+            assert.strictEqual(list.app.name, "Test Shop");
+            // Same file twice is listed once, newest details win
+            assert.deepStrictEqual(list.channels.beta.map((b) => b.build), ["2"]);
+            assert.deepStrictEqual(list.channels.production.map((b) => b.build), ["2"]);
+            assert.match(list.channels.beta[0].commit, /^[0-9a-f]{40}$/);
+            for (const b of list.channels.beta) {
+              const sha = crypto.createHash("sha256").update(fs.readFileSync("next/" + b.file)).digest("hex");
+              assert.strictEqual(sha, b.sha256);
+            }
+            const first = JSON.parse(fs.readFileSync("empath-builds/empath-builds.json", "utf8"));
+            assert.strictEqual(first.channels.beta[0].notes, "Notes with \"quotes\"; $(and a command) stay plain text");
+            console.log("All checks passed");
+          '
+
+      - name: A wrong token stops the publish instead of starting over
+        run: |
+          if EMPATH_BUILDS_TOKEN=wrong node empath-publish.js publish --out bad \
+              --from http://localhost:8765/empath-builds.json \
+              --file app.apk --platform android --version 9 --channel beta; then
+            echo "Expected the publish to fail" && exit 1
+          fi
+          test ! -e bad/empath-builds.json
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make a stand-in .app
+        run: |
+          mkdir -p Shop.app/Frameworks
+          printf '<plist/>' > Shop.app/Info.plist
+          ln -s ../Info.plist Shop.app/Frameworks/link
+
+      - uses: ./
+        with:
+          file: Shop.app
+          platform: ios
+          version: 4.3.0
+          build: '912'
+          app-name: Test Shop
+
+      - name: The zip holds the .app, with its link intact
+        run: |
+          zip=$(ls empath-builds/builds/ios/*.app.zip)
+          mkdir unzipped && ditto -x -k "$zip" unzipped
+          test -f unzipped/Shop.app/Info.plist
+          test -L unzipped/Shop.app/Frameworks/link
+          echo "All checks passed"
